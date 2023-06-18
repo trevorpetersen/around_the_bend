@@ -28,6 +28,7 @@ def get_expected_rr_value(state: 'State') -> int:
             dice=list(non_bust_set),
             can_reroll=False,
             can_end=False,
+            recursion_level=state.recursion_level,
         )
 
         point_sum += possible_state.get_value()
@@ -44,6 +45,7 @@ class State:
     dice: List[int]
     can_reroll: bool
     can_end: bool
+    recursion_level: int = 0
 
     def get_value(self) -> int:
         self.dice.sort()
@@ -70,6 +72,7 @@ class State:
                 dice=new_dice,
                 can_reroll=len(new_dice) > 0,
                 can_end=True,
+                recursion_level=self.recursion_level,
             ))
 
         keep_states_values = list(map(lambda state: state.get_value(), keep_states))
@@ -77,27 +80,42 @@ class State:
         possible_values += keep_states_values
 
         value = max(possible_values)
+        # If you get around the bend, then you get to go again. To approximate this value, add on the expected value
+        # of having another turn.
+        if len(self.dice) == 0 and self.recursion_level < 0:
+            # This is just a hacky state for "you get to roll all the dice again"
+            value += get_expected_rr_value(State(
+                points=0,
+                dice=[2,3,4,2,3,4],
+                can_reroll=True,
+                can_end=False,
+                recursion_level=self.recursion_level + 1
+            ))
         _SEEN_VALUES[state_hash] = value
 
         return value
 
 
-def choose_action_with_bot(turn_state: game.TurnState) -> game.Action:
+def choose_action_with_bot(turn_state: game.TurnState, game_state: game.GameState) -> game.Action:
     print('')
-    print(turn_state)
+    dice = turn_state.available_dice
+    dice.sort()
+    print(dataclasses.replace(turn_state, available_dice=dice))
     board = game.Board(turn_state.available_dice)
 
     possible_actions: List[Tuple[game.Action, int]] = []
 
     if turn_state.can_end_turn:
-        possible_actions.append((game.Actions.end_turn(), turn_state.turn_score))
+        if not _should_not_consider_ending_turn(turn_state, game_state):
+            possible_actions.append((game.Actions.end_turn(), turn_state.turn_score))
 
-        possible_actions.append((game.Actions.reroll(), get_expected_rr_value(State(
-            points=turn_state.turn_score,
-            dice=turn_state.available_dice,
-            can_reroll=False,
-            can_end=True,
-        ))))
+        if not _should_not_consider_rerolling_turn(turn_state, game_state):
+            possible_actions.append((game.Actions.reroll(), get_expected_rr_value(State(
+                points=turn_state.turn_score,
+                dice=turn_state.available_dice,
+                can_reroll=False,
+                can_end=True,
+            ))))
 
     available_keep_sets = board.get_available_keep_sets()
     for keep_set_dice in available_keep_sets:
@@ -119,3 +137,25 @@ def choose_action_with_bot(turn_state: game.TurnState) -> game.Action:
             best = possible_action
 
     return best[0]
+
+def _should_not_consider_ending_turn(turn_state: game.TurnState, game_state: game.GameState) -> bool:
+    """Don't end your turn if the opponent would win. Go for the Hail Marry!"""
+    if not game_state.opponents_states:
+        return False
+
+    if not game_state.score_to_win_has_been_reached:
+        return False
+
+    score_to_beat = max(map(lambda opponent: opponent.score, game_state.opponents_states))
+    return game_state.current_players_state.score + turn_state.turn_score < score_to_beat
+
+def _should_not_consider_rerolling_turn(turn_state: game.TurnState, game_state: game.GameState) -> bool:
+    """Don't reroll if it could lose you the game."""
+    if not game_state.opponents_states:
+        return False
+
+    if not game_state.score_to_win_has_been_reached:
+        return False
+
+    score_to_beat = max(map(lambda opponent: opponent.score, game_state.opponents_states))
+    return game_state.current_players_state.score + turn_state.turn_score > score_to_beat

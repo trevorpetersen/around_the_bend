@@ -28,22 +28,30 @@ VALID_KEEP_SETS = [
 ]
 
 
-def choose_action_with_keyboard(turn_state: 'TurnState') -> 'Action':
-    print(turn_state)
+def choose_action_with_keyboard(turn_state: 'TurnState', game_state: 'GameState') -> 'Action':
+    dice = turn_state.available_dice
+    dice.sort()
+    print(dataclasses.replace(turn_state, available_dice=dice))
 
     while True:
-        action_string = input('Action: ')
+        try:
+            action_string = input('Action: ')
 
-        if action_string.lower() == 'end':
-            return Actions.end_turn()
-        elif action_string.lower() == 'rr':
-            return Actions.reroll()
-        else:
-            action_string = action_string.strip()
-            action_string = action_string.replace(' ', '')
-            action_string = action_string.replace(',', '')
-            action_string = list(action_string)
-            return Actions.keep_dice(list(map(lambda dice_value: int(dice_value), action_string)))
+            if action_string == '':
+                raise ValueError()
+
+            if action_string.lower() in ('e', 'end'):
+                return Actions.end_turn()
+            elif action_string.lower() in ('r', 'rr'):
+                return Actions.reroll()
+            else:
+                action_string = action_string.strip()
+                action_string = action_string.replace(' ', '')
+                action_string = action_string.replace(',', '')
+                action_string = list(action_string)
+                return Actions.keep_dice(list(map(lambda dice_value: int(dice_value), action_string)))
+        except Exception:
+            print('Input not understood. Try again')
 
 def get_score(keep_sets: List[KeepSet]) -> int:
     return sum(map(lambda keep_set: keep_set.score, keep_sets))
@@ -97,6 +105,17 @@ def _are_valid_dice_values(dice: List[int]) -> bool:
             return False
 
     return True
+
+
+@dataclasses.dataclass(frozen=True)
+class PlayerState:
+    score: int
+
+@dataclasses.dataclass(frozen=True)
+class GameState:
+    score_to_win_has_been_reached: bool
+    current_players_state: PlayerState
+    opponents_states: List[PlayerState]
 
 @dataclasses.dataclass(frozen=True)
 class TurnState:
@@ -182,7 +201,7 @@ class Actions:
 class Player:
     name: str
     score: int
-    choose_action: Callable[[TurnState], Action]
+    choose_action: Callable[[TurnState, GameState], Action]
 
 
 
@@ -194,14 +213,18 @@ class GameEngine:
         self._score_to_win = score_to_win
 
     def play(self) -> PlayOutcome:
+        for player in self._players:
+            player.score = 0
+
         turn_queue = deque(self._players)
 
         while turn_queue:
+            self._print_scoreboard()
             self._board.reset()
             current_player = turn_queue.popleft()
             print(f'It\'s {current_player.name}\'s ({current_player.score}) turn!')
 
-            turn_outcome = self._take_turn(current_player.choose_action, self._board)
+            turn_outcome = self._take_turn(current_player, self._board)
             print(turn_outcome)
 
             current_player.score += turn_outcome.score
@@ -218,9 +241,10 @@ class GameEngine:
         return max(self._players, key=attrgetter('score')).score >= self._score_to_win
 
 
-    def _take_turn(self, choose_action_func: Callable[[TurnState], Action],  board: 'Board') -> TurnOutcome:
+    def _take_turn(self, current_player: Player,  board: 'Board') -> TurnOutcome:
         last_action = None
-        turn_state = TurnState(
+        game_state = self._calculate_game_state(current_player)
+        turn_state=TurnState(
             turn_score=get_score(board.get_kept_dice()),
             can_end_turn=False,
             available_dice=board.get_available_dice(),
@@ -239,9 +263,10 @@ class GameEngine:
                 print('Cannot act')
                 return TurnOutcome(0, False)
 
-            action = choose_action_func(turn_state)
+            action = current_player.choose_action(turn_state, game_state)
             print(f'Performing action {action}')
             turn_state = action.perform_action(board)
+            game_state = self._calculate_game_state(current_player)
 
             last_action = action
 
@@ -249,10 +274,29 @@ class GameEngine:
         return len(board.get_available_keep_sets()) > 0 or turn_state.can_end_turn
 
 
+    def _calculate_game_state(self, current_player: Player) -> GameState:
+        opponents = list(filter(lambda player: player != current_player, self._players))
+
+        return GameState(
+            score_to_win_has_been_reached=self._player_has_reached_score_to_win(),
+            current_players_state=PlayerState(
+                score=current_player.score,
+            ),
+            opponents_states=list(map(lambda opponent: PlayerState(score=opponent.score), opponents))
+        )
+
+
     def setup_game(self) -> None:
         self._board.reset()
         for player in self._players:
             player.score = 0
+
+    def _print_scoreboard(self) -> None:
+        print('***** Scores *****')
+        for player in self._players:
+            print(f'{player.name} - {player.score}')
+        print('******************')
+
 
 class Board:
     MAX_DICE = 6
