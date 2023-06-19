@@ -1,27 +1,20 @@
-import random
-
 import bot_lib
 import game
 
+PLAYER_NAME = 'Trevor'
+SCORE_TO_WIN = 5000
 
 def main():
-    seed = random.randint(0, 1_000_000)
-    seed = 536354
-    print(seed)
-    random.seed(seed)
-    bot = game.Player('trev-bot', 0, bot_lib.choose_action_with_bot)
-    player = game.Player('trevor', 0, game.choose_action_with_keyboard)
+    player = game.Player(PLAYER_NAME, 0, game.choose_action_with_keyboard)
+    bot = game.Player('Trev-bot', 0, bot_lib.choose_action_with_bot)
     board = game.Board([1,1,1,1,1,1])
-    print('Start game!')
     game_engine = game.GameEngine(
-        players=[bot],
+        players=[player, bot],
         board=board,
-        score_to_win=0,
+        score_to_win=SCORE_TO_WIN,
     )
 
-    outcome = game_engine.play()
-
-    print(outcome)
+    game_engine.play()
 
 main()
 

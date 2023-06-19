@@ -105,17 +105,16 @@ def choose_action_with_bot(turn_state: game.TurnState, game_state: game.GameStat
 
     possible_actions: List[Tuple[game.Action, int]] = []
 
-    if turn_state.can_end_turn:
-        if not _should_not_consider_ending_turn(turn_state, game_state):
+    if not _should_not_consider_ending_turn(turn_state, game_state):
             possible_actions.append((game.Actions.end_turn(), turn_state.turn_score))
 
-        if not _should_not_consider_rerolling_turn(turn_state, game_state):
-            possible_actions.append((game.Actions.reroll(), get_expected_rr_value(State(
-                points=turn_state.turn_score,
-                dice=turn_state.available_dice,
-                can_reroll=False,
-                can_end=True,
-            ))))
+    if turn_state.can_reroll and not _should_not_consider_rerolling_turn(turn_state, game_state):
+        possible_actions.append((game.Actions.reroll(), get_expected_rr_value(State(
+            points=turn_state.turn_score,
+            dice=turn_state.available_dice,
+            can_reroll=True,
+            can_end=False,
+        ))))
 
     available_keep_sets = board.get_available_keep_sets()
     for keep_set_dice in available_keep_sets:
