@@ -1,4 +1,4 @@
-I've only test on python 3.8. There aren't and dependencies, so just run:
+I've only tested on python 3.8. There aren't and dependencies, so just make sure you are using 3.8 or later and run:
 ```
 python main.py
 ```
